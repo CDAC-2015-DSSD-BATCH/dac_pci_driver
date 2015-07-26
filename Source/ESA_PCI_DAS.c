@@ -22,29 +22,39 @@
 #include<linux/fs.h>
 #include<linux/cdev.h>
 #include<linux/kdev_t.h>
+#include<asm/io.h>
+#include <linux/poll.h>
 
+// Probing - Device Detection
 #define VENDOR_ID 0x10b5 
 #define DEVICE_ID 0x9050
 #define SUBVENDOR_ID 0x4441
 #define SUBDEVICE_ID 0x4144
 
-#define BASE_ADDR 0x0000 // TODO Base Address yet to be discovered
-#define MASTER_REG (BASE_ADDR+E)
-#define LD_CL_CHANL (BASE_ADDR+8)
-#define ADC_MODE_REG (BASE_ADDR+9)
-#define ADC_STATUS_REG (BASE_ADDR+9)
-#define LOWER_DByte (BASE_ADDR+A)
-#define HIGHER_DByte (BASE_ADDR+B)
-#define POLLINIT_REG (BASE_ADDR+D)
+// IOCTL
+#define MAGIC_NUMBER 'x'
+#define READ_DSA 	_IO(MAGIC_NUMBER, 0)
+
+// DSA
+#define SET_MASTER_REG(BASE_ADDR)   outb(0x5,(int) BASE_ADDR+0xE);
+#define GET_MASTER_REG(BASE_ADDR)   inb(BASE_ADDR+0xE);
+
+#define SET_ADC_MODE_REG(BASE_ADDR)   outb(0x4,(int) BASE_ADDR+0x9);
+#define GET_ADC_MODE_REG(BASE_ADDR)   inb(BASE_ADDR+9)
+
+#define SET_CLEAR_CHNL(BASE_ADDR)     outb(0x8A,(int) BASE_ADDR+0x8);
+#define SET_LOAD_CHNL(BASE_ADDR)      outb(0xA,(int) BASE_ADDR+0x8);
+
+#define SET_POLLINIT_REG(BASE_ADDR)   outb(0x56,(int) BASE_ADDR+0xD);
 
 // Prototypes
 int DAS_probe (struct pci_dev *, const struct pci_device_id *);
 void DAS_remove (struct pci_dev *); 
 int DAS_open (struct inode *, struct file *);
-ssize_t DAS_read (struct file *, char __user *, size_t, loff_t *);
-ssize_t DAS_write (struct file *, const char __user *, size_t, loff_t *);
 long DAS_ioctl (struct file *, unsigned int, unsigned long);
 int DAS_release (struct inode *, struct file *);
+unsigned int DAS_poll (struct file *, struct poll_table_struct *);
+
 
 // Globals Variables
 struct DAS_struct{
@@ -52,15 +62,15 @@ struct DAS_struct{
 	struct cdev cdev;
 	struct class *device_class;
 	struct device *device;
+	void __iomem *base_address;
 } DAS_inst;
 
 struct file_operations file_ops={
 	.owner=THIS_MODULE,
 	.open=DAS_open,
-	.read=DAS_read,
-	.write=DAS_write,
 	.unlocked_ioctl=DAS_ioctl,
 	.release=DAS_release,
+	.poll=DAS_poll,
 };
 
 struct pci_device_id DAS_id={
@@ -78,28 +88,79 @@ static struct pci_driver pci_driver={
 };
 
 // Functions
-int DAS_open (struct inode *inode, struct file *fp){
-	printk(KERN_ALERT "Open Called!!");
+unsigned int DAS_poll (struct file *fp, struct poll_table_struct *poll_table){
+	printk(KERN_ALERT "In Poll Method");
+	return POLLIN;
+}
+
+int DAS_open (struct inode *inode, struct file *fp){	
+	
+	// Setting ADC Mode Register
+	/*
+	 7 6 5 4 3 2 1 0
+	 X X 0 0 0 1 0 0	 
+
+	 0th and 1st bit ->  Polled Mode
+	 2nd and 3rd bit ->  One Channel
+	 4ht and 5th bit ->  Gain x1
+	*/
+	SET_ADC_MODE_REG(DAS_inst.base_address);
+
+	// ADC Load/Clear Registers
+	/*
+         Clearing Channel 10
+
+	 7 6 5 4 3 2 1 0
+	 1 X X X 1 0 1 0
+	 
+	 0,1,2,3 bits -> Represents the Channel Number  
+	 7th Bit -> Clear Bit
+	*/
+	SET_CLEAR_CHNL(DAS_inst.base_address);
+
+	
+	// ADC Load/Clear Registers
+	/*
+	 Loading Channel 10
+
+	 7 6 5 4 3 2 1 0
+         0 X X X 1 0 1 0
+
+         0,1,2,3 bits -> Represents the Channel Number
+         7th Bit -> Load Bit
+	*/
+	SET_LOAD_CHNL(DAS_inst.base_address);
+
+	// Setting PollInit Register
+	// As per RTAI Code
+	SET_POLLINIT_REG(DAS_inst.base_address);	
+	
 	return 0;
 }
 
-ssize_t DAS_read (struct file *fp, char __user *uBuff, size_t size, loff_t *loff){
-	printk(KERN_ALERT "Read Called!!");
-	return size;	
-}
-
-ssize_t DAS_write (struct file *fp, const char __user *uBuff, size_t size, loff_t *loff){
-	printk(KERN_ALERT "Write Called!!");
-	return size;
-}
-
 long DAS_ioctl (struct file *fp, unsigned int cmd, unsigned long arg){
-	printk(KERN_ALERT "IOCTL Called!!");
+	switch(cmd){
+		case READ_DSA:
+				printk(KERN_ALERT "IOCTL CAlled!!");
+				// Keep Pooling till the 7th bit of ADC Status Register 
+				// is set to 0. ie, 'End of Conversion' (EOC)
+				
+				// Aquire the Data from Lower Byte and Higher Byte Register
+				
+				// Clear the Channel
+				break;
+		default:
+			 printk(KERN_ALERT "Read Not Detected!");
+	}
 	return 0;
 }
 
 int DAS_release (struct inode *inode, struct file *fp){
 	printk(KERN_ALERT "Release Called!!");	
+	
+	// Clear Channel 10
+	SET_CLEAR_CHNL(DAS_inst.base_address);
+	
 	return 0;
 }
 
@@ -153,8 +214,7 @@ int DAS_probe(struct pci_dev *dev, const struct pci_device_id *id){
 
 	if(pci_enable_device(dev)==0){
 		int status;
-		void __iomem *startAddress;
-		unsigned long baseAddr;
+		unsigned long base_addr;// Physical Base Address
 
 		printk(KERN_ALERT "Device Enabled!!");
 
@@ -165,21 +225,21 @@ int DAS_probe(struct pci_dev *dev, const struct pci_device_id *id){
 			return 0;
 		}
 
-		baseAddr=pci_resource_start(dev,2);
-		printk(KERN_ALERT "%p - Base Address",baseAddr);		
-		printk(KERN_ALERT "%p - Flag",pci_resource_flags(dev,2));
+		base_addr=pci_resource_start(dev,2);
 
-		startAddress=pci_iomap(dev,2,0);
-		printk(KERN_ALERT "%p - virtual Address",startAddress);
-		printk(KERN_ALERT "%d - irq Number",dev->irq);
+		DAS_inst.base_address=pci_iomap(dev,2,0);// Virtual Base Address
 
-		/*if(dev->resource[2].flags==IORESOURCE_IO){
-			printk(KERN_ALERT "IO Mapped!!");
-		}else if(dev->resource[2].flags==IORESOURCE_MEM){
-			printk(KERN_ALERT "Memory Mapped!!");
-		}else{
-			printk(KERN_ALERT " %ld NONE!!",dev->resource[2].flags);
-		}*/
+		// Setting Master Register 
+		/*
+		 MSB Nibble - X X X X
+		 LSP Nibble - 0 1 0 1
+		 
+		 0th bit - Polarity -> Unipolar
+		 1st bit - Input type -> Single Ended
+		 2nd bit - ADC Range -> 0v to 10v, +/- 5v
+		*/
+		SET_MASTER_REG(DAS_inst.base_address);		
+	
 	}else{
 		printk(KERN_ALERT "Device Not Enabled!!");
 	}
