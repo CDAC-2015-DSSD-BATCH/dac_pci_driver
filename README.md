@@ -3,7 +3,7 @@ Driver for PCI Based Data Aquisition Card.
 
 ------------------------------- Requirements --------------------------------------
 
-PCI Card name: ESA-PCI-DAS, from Electro System Associates PVY LTD. Bangalore, India.
+PCI Card name: ESA-PCI-DAS, from Electro System Associates pvt ltd. Bangalore, India.
 
 System Used: Intel Dual Core, 4GB RAM.
 
@@ -11,7 +11,7 @@ Operating System: OpenSuse.
 
 Kernel: Linux 3.3.6
 
----------------------------- Note About The Repository -----------------------------
+---------------------------- Note About The Repository ----------------------------
 
 Notes/ -> Provides basic Notes / References, Sample Codes which were used to build 
 	  the project.
@@ -32,6 +32,8 @@ Notes/ -> Provides basic Notes / References, Sample Codes which were used to bui
 SnapShots/ -> Pictures of few moments while doing the Project.
 
 Source/ -> Contains the Source Code for ESA-PCI-DAS Driver.
+	
+	doc/ -> Contains Document about ESA-PCI-DAS Driver.	
 
 	ESA_PCI_DAS.c -> Source Code
 
