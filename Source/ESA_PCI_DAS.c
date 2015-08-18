@@ -2,12 +2,12 @@
  *
  *  PCI Based - DAS (Data Acquisition System) Driver for ESA PCI DAS
  *
- *  Authors: Aldonraj,Asheerudin Khilji,Deepak Kumar,Shreyas Hemachandran
+ *  Authors: Aldonraj, Asheerudin Khilji, Deepak Kumar, Shreyas Hemachandran
  *  Start Date: 21st July 2015
  *
  *  The driver Configures itself with the DAS Card when it is inserted into
  *  the PCI Slot in the computer. It provides the output to the UserSpace
- *  using the usual 'Open','Read','Write' System Calls.
+ *  using the usual 'Open','Read','Write','IOCTL' System Calls.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -24,6 +24,9 @@
 #include<linux/kdev_t.h>
 #include<asm/io.h>
 #include <linux/delay.h>
+
+// Debug Flag
+#define DEBUG
 
 // Probing - Device Detection
 #define VENDOR_ID 0x10b5 
@@ -130,6 +133,9 @@ int DAS_open (struct inode *inode, struct file *fp){
 	return 0;
 }
 
+/*
+ *	Byte to Bynary Converter
+ */
 const char *byte_to_binary(int x)
 {
    	static char b[9];
@@ -150,18 +156,25 @@ long DAS_ioctl (struct file *fp, unsigned int cmd, unsigned long arg){
 	char status;
 	switch(cmd){
 		case READ_DSA:
+#ifdef DEBUG
 				printk(KERN_ALERT "IOCTL CAlled!!");
+#endif
 				// Setting PollInit Register
 			        // As per RTAI Code
 			        SET_POLLINIT_REG(DAS_inst.base_address);
 
 				// Keep Polling till the 7th bit of ADC Status Register 
 				// is set to 0. ie, 'End of Conversion' (EOC)
-				status=GET_ADC_STATUS_REG(DAS_inst.base_address);		
-				printk(KERN_ALERT "%x - status!",status);
-				status=status >> 7;
-				printk(KERN_ALERT "%s - Status Register",byte_to_binary(status));			
-				while(status == 1){
+				do{
+					status=GET_ADC_STATUS_REG(DAS_inst.base_address);
+#ifdef DEBUG		
+					printk(KERN_ALERT "%x - status!",status);
+#endif
+					status=status >> 7;
+#ifdef DEBUG
+					printk(KERN_ALERT "%s - Status Register",byte_to_binary(status));
+#endif			
+			
 					udelay(20);
 					printk(KERN_ALERT "Udelay in Progress!!");
 
@@ -169,7 +182,7 @@ long DAS_ioctl (struct file *fp, unsigned int cmd, unsigned long arg){
 					if(count == 0){
 						break;
 					}
-				}
+				}while(status == 1);
 			
 				// Aquiring Data From ADC Data Registers
 				/*
@@ -189,18 +202,23 @@ long DAS_ioctl (struct file *fp, unsigned int cmd, unsigned long arg){
 						break;
 					}
 				}
+#ifdef DEBUG
 				printk(KERN_ALERT "Low Byte: %s",byte_to_binary(low_byte));
 				printk(KERN_ALERT "High Byte: %s",byte_to_binary(high_byte));
-				
+#endif				
 				break;
 		default:
+#ifdef DEBUG
 			 printk(KERN_ALERT "Read Not Detected!");
+#endif
 	}
 	return 0;
 }
 
 int DAS_release (struct inode *inode, struct file *fp){
+#ifdef DEBUG
 	printk(KERN_ALERT "Release Called!!");	
+#endif
 	
 	// Clear Channel 7
 	SET_CLEAR_CHNL(DAS_inst.base_address);
@@ -210,8 +228,10 @@ int DAS_release (struct inode *inode, struct file *fp){
 
 static int __init DAS_init(void){
 	int status;
+
+#ifdef DEBUG
 	printk(KERN_ALERT "%s initialized!!",pci_driver.name);
-	
+#endif	
 	status=alloc_chrdev_region(&DAS_inst.device_no,0,1,pci_driver.name);
 	if(status < 0){
 		printk("Device Number Allocation Failed!");
@@ -224,10 +244,10 @@ static int __init DAS_init(void){
 		printk("Cdev Not Created!!");
 		return 0;
 	}
-
+#ifdef DEBUG
 	printk(KERN_ALERT "Major No: %d",MAJOR(DAS_inst.device_no));
 	printk(KERN_ALERT "Minor No: %d",MINOR(DAS_inst.device_no));
-
+#endif
 	DAS_inst.device_class=class_create(THIS_MODULE,pci_driver.name);
 	if(DAS_inst.device_class==NULL){
 		printk(KERN_ALERT "Class Not Created!");
@@ -244,8 +264,9 @@ static int __init DAS_init(void){
 }
 
 static void __exit DAS_exit(void){
+#ifdef DEBUG
 	printk(KERN_ALERT "%s Exited!!",pci_driver.name);
-	
+#endif	
 	cdev_del(&DAS_inst.cdev);
 	device_destroy(DAS_inst.device_class,DAS_inst.device_no);
 	class_destroy(DAS_inst.device_class);
@@ -254,14 +275,15 @@ static void __exit DAS_exit(void){
 }
 
 int DAS_probe(struct pci_dev *dev, const struct pci_device_id *id){
+#ifdef DEBUG
 	printk(KERN_ALERT "Vendor %x | Device %x -- Probing !",dev->vendor,dev->device);
-
+#endif
 	if(pci_enable_device(dev)==0){
 		int status;
 		//unsigned long base_addr;// Physical Base Address
-
+#ifdef DEBUG
 		printk(KERN_ALERT "Device Enabled!!");
-
+#endif
 		status=pci_request_region(dev,2,"MyBar");
 		if(status<0){
 			printk(KERN_ALERT "Requested Region not Allocated!");
@@ -286,13 +308,17 @@ int DAS_probe(struct pci_dev *dev, const struct pci_device_id *id){
 		SET_MASTER_REG(DAS_inst.base_address);		
 	
 	}else{
+#ifdef DEBUG
 		printk(KERN_ALERT "Device Not Enabled!!");
+#endif
 	}
 	return 0;
 }
 
 void DAS_remove(struct pci_dev *dev){
+#ifdef DEBUG
 	printk(KERN_ALERT "%s -- Removing!",pci_driver.name);
+#endif
 	pci_disable_device(dev);
 	pci_release_region(dev,2);
 }
@@ -303,4 +329,4 @@ module_init(DAS_init);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Shreyas Hemachandran, Aldonraj, Asheerudin Khilji, Deepak Kumar");
-MODULE_VERSION("0.0");
+MODULE_VERSION("0.1");
