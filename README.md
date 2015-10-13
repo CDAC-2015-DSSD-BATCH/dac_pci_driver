@@ -37,4 +37,4 @@ Source/ -> Contains the Source Code for ESA-PCI-DAS Driver.
 
 	ESA_PCI_DAS.c -> Source Code
 
-	Makefile -> Command to Compile the code, using 'make' and 'make clean' commands
+	Makefile -> Command to Compile the code, using 'make modules' and 'make clean' commands
